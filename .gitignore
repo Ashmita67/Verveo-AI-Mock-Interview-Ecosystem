@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+.venv/
+venv/
+env/
+
+# Virtual environments and local tooling
+.python-version
+.DS_Store
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Backend artifacts
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/.coverage
+backend/*.sqlite3
+backend/*.db
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Alembic / logs
+backend/*.log
+*.log
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Misc
+.idea/
+.vscode/
