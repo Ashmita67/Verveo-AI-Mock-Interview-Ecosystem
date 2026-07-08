@@ -1,33 +1,40 @@
 import { Menu } from "lucide-react";
 import { Outlet } from "react-router-dom";
 import { useState } from "react";
+import { cn } from "@/utils/cn";
 import Sidebar from "./Sidebar";
+import { Button } from "@/components/ui/Button";
 
 function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="shell py-6 lg:py-8">
-        <div className="mb-4 flex items-center justify-between lg:hidden">
-          <button
-            type="button"
-            onClick={() => setSidebarOpen((current) => !current)}
-            className="inline-flex items-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 text-sm font-medium"
-          >
+    <div className="h-screen overflow-hidden bg-background">
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      {sidebarOpen ? (
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-30 bg-slate-950/30 backdrop-blur-[1px] lg:hidden"
+        />
+      ) : null}
+
+      <div className="flex h-full min-w-0 flex-col lg:pl-72">
+        <div className="flex items-center justify-between gap-4 border-b border-border/60 bg-background/80 px-4 py-3 backdrop-blur-xl lg:hidden">
+          <Button variant="outline" size="sm" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-4 w-4" />
             Menu
-          </button>
+          </Button>
+          <div className="text-sm font-medium text-muted-foreground">Verveo workspace</div>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-          <div className={sidebarOpen ? "block" : "hidden lg:block"}>
-            <Sidebar />
-          </div>
-          <main className="min-w-0 rounded-[28px] border border-border bg-card/80 p-5 shadow-sm backdrop-blur-xl sm:p-6 lg:p-8">
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          <div className={cn("shell py-6 sm:py-8 lg:py-10", "app-page")}>
             <Outlet />
-          </main>
-        </div>
+          </div>
+        </main>
       </div>
     </div>
   );

@@ -109,64 +109,74 @@ function ResumeLibrary() {
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>Upload Resume</CardTitle>
-            <CardDescription>Drag and drop a PDF resume or browse from your device.</CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => inputRef.current?.click()}
-            onKeyDown={(event) => event.key === "Enter" && inputRef.current?.click()}
-            onDrop={handleDrop}
-            onDragOver={(event) => event.preventDefault()}
-            className="flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-border bg-secondary/40 p-6 text-center transition hover:bg-secondary/60"
-          >
-            <UploadCloud className="h-10 w-10 text-primary" />
-            <p className="mt-4 text-base font-semibold">Drag & Drop Resume Upload</p>
-            <p className="mt-2 text-sm text-muted-foreground">PDF only. The backend will parse, score, and store it.</p>
-            <input
-              ref={inputRef}
-              type="file"
-              accept="application/pdf"
-              className="hidden"
-              onChange={(event) => handleUpload(event.target.files?.[0])}
-            />
-            <Button
-              className="mt-5"
-              type="button"
-              isLoading={uploading}
-              onClick={(event) => {
-                event.stopPropagation();
-                inputRef.current?.click();
-              }}
-            >
-              Upload PDF
-            </Button>
-          </div>
-          {uploading ? (
-            <div className="space-y-2">
-              <ProgressBar value={progress} />
-              <p className="text-sm text-muted-foreground">Uploading... {progress}%</p>
+    <div className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Upload Resume</CardTitle>
+              <CardDescription>Drag and drop a PDF resume or browse from your device.</CardDescription>
             </div>
-          ) : null}
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => inputRef.current?.click()}
+              onKeyDown={(event) => event.key === "Enter" && inputRef.current?.click()}
+              onDrop={handleDrop}
+              onDragOver={(event) => event.preventDefault()}
+              className="flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-[24px] border border-dashed border-border/60 bg-muted/40 p-6 text-center transition duration-200 hover:-translate-y-0.5 hover:bg-muted/60"
+            >
+              <UploadCloud className="h-10 w-10 text-primary" />
+              <p className="mt-4 text-base font-semibold">Drag & Drop Resume Upload</p>
+              <p className="mt-2 max-w-md text-sm text-muted-foreground">PDF only. The backend will parse, score, and store it.</p>
+              <input
+                ref={inputRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={(event) => handleUpload(event.target.files?.[0])}
+              />
+              <Button
+                className="mt-5"
+                type="button"
+                isLoading={uploading}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  inputRef.current?.click();
+                }}
+              >
+                Upload PDF
+              </Button>
+            </div>
+            {uploading ? (
+              <div className="space-y-2">
+                <ProgressBar value={progress} />
+                <p className="text-sm text-muted-foreground">Uploading... {progress}%</p>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
 
-          <div className="space-y-3">
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Resume List</CardTitle>
+              <CardDescription>Recent uploads with quick access to details and deletion.</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
             {resumes.length ? (
               resumes.map((resume) => (
                 <button
                   key={resume.id}
                   type="button"
                   onClick={() => setSelectedResume(resume)}
-                  className="flex w-full items-center justify-between rounded-2xl border border-border p-4 text-left transition hover:bg-secondary/50"
+                  className="flex w-full items-center justify-between rounded-[20px] bg-muted/40 p-4 text-left transition duration-200 hover:-translate-y-0.5 hover:bg-muted/60"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-secondary">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-muted/70">
                       <FileText className="h-5 w-5 text-primary" />
                     </div>
                     <div>
@@ -190,9 +200,9 @@ function ResumeLibrary() {
                 onAction={() => inputRef.current?.click()}
               />
             )}
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader>
@@ -205,7 +215,7 @@ function ResumeLibrary() {
         <CardContent className="space-y-5">
           {selectedSummary ? (
             <>
-              <div className="rounded-2xl border border-border p-4">
+              <div className="rounded-[20px] bg-muted/50 p-4">
                 <p className="text-sm text-muted-foreground">Resume File Name</p>
                 <p className="mt-1 font-semibold">{selectedSummary.displayName}</p>
                 {selectedSummary.alias ? <p className="mt-1 text-xs text-muted-foreground">{selectedSummary.fileName}</p> : null}
@@ -214,24 +224,24 @@ function ResumeLibrary() {
                 </p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-border p-4">
+                <div className="rounded-[20px] bg-muted/50 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Resume Status</p>
                   <p className="mt-2 text-lg font-semibold">{selectedSummary.status}</p>
                 </div>
-                <div className="rounded-2xl border border-border p-4">
+                <div className="rounded-[20px] bg-muted/50 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">ATS Score</p>
                   <p className="mt-2 text-lg font-semibold">{selectedSummary.ats_score ?? "—"}</p>
                 </div>
-                <div className="rounded-2xl border border-border p-4">
+                <div className="rounded-[20px] bg-muted/50 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Skills Extracted</p>
                   <p className="mt-2 text-lg font-semibold">{selectedSummary.skillsCount}</p>
                 </div>
-                <div className="rounded-2xl border border-border p-4">
+                <div className="rounded-[20px] bg-muted/50 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Projects Extracted</p>
                   <p className="mt-2 text-lg font-semibold">{selectedSummary.projectsCount}</p>
                 </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="flex flex-wrap gap-3">
                 <Button type="button" variant="secondary" onClick={() => inputRef.current?.click()}>
                   Upload New Resume
                 </Button>

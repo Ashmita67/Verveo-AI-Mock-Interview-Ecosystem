@@ -31,13 +31,16 @@ function AppRouter() {
       <Route path="/auth/google/callback" element={<GoogleCallbackPage />} />
 
       <Route element={<ProtectedRoute />}>
+        <Route path="/interviews/create" element={<InterviewCreationPage />} />
+        <Route path="/interviews/session" element={<InterviewSessionPage />} />
+        <Route path="/interviews/session/:id" element={<InterviewSessionPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/reports/:id" element={<ReportsPage />} />
+
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/resume" element={<ResumeManagementPage />} />
           <Route path="/resume/:resumeId" element={<ResumeDetailsPage />} />
-          <Route path="/interviews/create" element={<InterviewCreationPage />} />
-          <Route path="/interviews/session" element={<InterviewSessionPage />} />
-          <Route path="/reports" element={<ReportsPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
         </Route>
       </Route>

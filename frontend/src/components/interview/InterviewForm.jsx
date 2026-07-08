@@ -2,21 +2,22 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import Modal from "@/components/ui/Modal";
+import { BriefcaseBusiness, Gauge, MonitorPlay } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import Input from "@/components/ui/Input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import Input from "@/components/ui/Input";
+import Select from "@/components/ui/Select";
 import { interviewDifficulties, interviewDomains, interviewModes, interviewSources, interviewTypes } from "@/constants/interviewOptions";
 import { startInterview } from "@/services/interviewService";
 import { listResumes } from "@/services/resumeService";
 import { saveInterviewSession } from "@/services/sessionService";
+import { cn } from "@/utils/cn";
 
 function InterviewForm() {
-  const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
   const [resumes, setResumes] = useState([]);
   const [loadingResumes, setLoadingResumes] = useState(false);
   const [resumeSearch, setResumeSearch] = useState("");
-  const navigate = useNavigate();
 
   const {
     register,
@@ -42,24 +43,33 @@ function InterviewForm() {
   const interviewSource = watch("interview_source");
   const selectedResumeId = watch("resume_id");
 
-  const loadResumes = async () => {
-    try {
-      setLoadingResumes(true);
-      const items = await listResumes();
-      const ordered = [...items].sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
-      setResumes(ordered);
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || "We couldn't load your resumes.");
-    } finally {
-      setLoadingResumes(false);
-    }
-  };
-
   useEffect(() => {
-    if (open) {
-      loadResumes();
+    let mounted = true;
+
+    async function loadResumes() {
+      try {
+        setLoadingResumes(true);
+        const items = await listResumes();
+        if (!mounted) return;
+        const ordered = [...items].sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
+        setResumes(ordered);
+      } catch (err) {
+        if (mounted) {
+          toast.error(err?.response?.data?.detail || "We couldn't load your resumes.");
+        }
+      } finally {
+        if (mounted) {
+          setLoadingResumes(false);
+        }
+      }
     }
-  }, [open]);
+
+    loadResumes();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (interviewSource === "generic") {
@@ -76,17 +86,20 @@ function InterviewForm() {
 
   const filteredResumes = useMemo(() => {
     const term = resumeSearch.trim().toLowerCase();
-    if (!term) {
-      return resumes;
-    }
+    if (!term) return resumes;
     return resumes.filter((resume) => {
       const fileName = resume.file_path?.split("/").pop() || "";
       const alias = resume.alias || "";
       return fileName.toLowerCase().includes(term) || alias.toLowerCase().includes(term);
     });
-  }, [resumes, resumeSearch]);
+  }, [resumeSearch, resumes]);
 
-  const selectedResume = useMemo(() => resumes.find((resume) => resume.id === selectedResumeId) || null, [resumes, selectedResumeId]);
+  const selectedResume = useMemo(
+    () => resumes.find((resume) => resume.id === selectedResumeId) || null,
+    [resumes, selectedResumeId],
+  );
+
+  const noResumesAvailable = !loadingResumes && resumes.length === 0;
 
   const onSubmit = async (values) => {
     try {
@@ -119,149 +132,152 @@ function InterviewForm() {
       });
 
       toast.success("Interview session created successfully.");
-      setOpen(false);
       reset();
       setResumeSearch("");
-      navigate("/interviews/session", { replace: true, state: { interviewId: session.interview_id } });
+      navigate(`/interviews/session/${session.interview_id}`, { replace: true, state: { interviewId: session.interview_id } });
     } catch (error) {
       toast.error(error?.response?.data?.detail || "We couldn't start the interview.");
     }
   };
 
-  const noResumesAvailable = !loadingResumes && resumes.length === 0;
-
   return (
-    <Modal
-      open={open}
-      onOpenChange={setOpen}
-      title="Start Interview"
-      description="Choose the interview configuration before launching the session."
-      trigger={
-        <Button className="w-full md:w-auto" onClick={() => setOpen(true)}>
-          Start Interview
-        </Button>
-      }
-    >
-      <Card className="border-0 bg-transparent p-0 shadow-none">
-        <CardHeader className="px-0 pt-0">
-          <div>
-            <CardTitle>Interview Configuration</CardTitle>
-            <CardDescription>Use the same polished layout, now powered by the backend.</CardDescription>
+    <Card className="mx-auto w-full max-w-4xl border-border/60 bg-card/95 shadow-[0_32px_100px_rgba(15,23,42,0.12)]">
+      <CardHeader className="mb-6 flex-col items-start gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-3">
+          <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-primary">
+            <BriefcaseBusiness className="h-3.5 w-3.5" />
+            Interview Setup
           </div>
-        </CardHeader>
-        <CardContent className="px-0 pb-0">
-          <form className="grid gap-5 md:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
-            <Input
-              label="Interview Title"
-              placeholder="Senior Frontend Engineer Loop"
-              error={errors.title?.message}
-              {...register("title", { required: "Interview title is required." })}
-            />
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-foreground">Interview Type</span>
-              <select
-                className="h-11 w-full rounded-2xl border border-input bg-background px-4 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-                {...register("type", { required: "Interview type is required." })}
-              >
+          <div className="space-y-2">
+            <CardTitle className="text-2xl sm:text-3xl">Prepare a focused practice session</CardTitle>
+            <CardDescription className="max-w-2xl">
+              Configure the interview first. Questions will begin only after you start the session on the next page.
+            </CardDescription>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-border/60 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          Setup only. No question generation here.
+        </div>
+      </CardHeader>
+
+      <CardContent>
+        <form className="space-y-8" onSubmit={handleSubmit(onSubmit)}>
+          <section className="space-y-4">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">Interview details</p>
+              <p className="mt-1 text-sm text-muted-foreground">Start with the role, domain, and difficulty you want to practice.</p>
+            </div>
+            <div className="grid gap-5 md:grid-cols-2">
+              <Input
+                label="Interview Title"
+                placeholder="Senior Frontend Engineer Loop"
+                error={errors.title?.message}
+                {...register("title", { required: "Interview title is required." })}
+              />
+              <Select label="Interview Type" error={errors.type?.message} {...register("type", { required: "Interview type is required." })}>
                 {interviewTypes.map((type) => (
                   <option key={type} value={type}>
                     {type}
                   </option>
                 ))}
-              </select>
-            </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-foreground">Domain</span>
-              <select
-                className="h-11 w-full rounded-2xl border border-input bg-background px-4 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-                {...register("domain", { required: "Domain is required." })}
-              >
+              </Select>
+              <Select label="Domain" error={errors.domain?.message} {...register("domain", { required: "Domain is required." })}>
                 {interviewDomains.map((domain) => (
                   <option key={domain} value={domain}>
                     {domain}
                   </option>
                 ))}
-              </select>
-            </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-foreground">Difficulty</span>
-              <select
-                className="h-11 w-full rounded-2xl border border-input bg-background px-4 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-                {...register("difficulty", { required: "Difficulty is required." })}
-              >
+              </Select>
+              <Select label="Difficulty" error={errors.difficulty?.message} {...register("difficulty", { required: "Difficulty is required." })}>
                 {interviewDifficulties.map((difficulty) => (
                   <option key={difficulty} value={difficulty}>
                     {difficulty}
                   </option>
                 ))}
-              </select>
-            </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-foreground">Interview Mode</span>
-              <select
-                className="h-11 w-full rounded-2xl border border-input bg-background px-4 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+              </Select>
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">Session format</p>
+              <p className="mt-1 text-sm text-muted-foreground">Choose how the interview should run and which response mode to use.</p>
+            </div>
+            <div className="grid gap-5 md:grid-cols-2">
+              <Select
+                label="Interview Mode"
+                error={errors.interview_mode?.message}
                 {...register("interview_mode", { required: "Interview mode is required." })}
               >
                 {interviewModes.map((mode) => (
                   <option key={mode} value={mode}>
-                    {mode}
+                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
                   </option>
                 ))}
-              </select>
-            </label>
+              </Select>
 
-            <div className="md:col-span-2 space-y-3">
-              <p className="text-sm font-medium text-foreground">Interview Source</p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {interviewSources.map((source) => {
-                  const disabled = source.value === "resume_based" && (noResumesAvailable || loadingResumes);
-                  return (
-                    <label
-                      key={source.value}
-                      className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${
-                        interviewSource === source.value ? "border-primary bg-primary/5" : "border-border hover:bg-secondary/40"
-                      } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
-                    >
-                      <input
-                        type="radio"
-                        value={source.value}
-                        disabled={disabled}
-                        className="mt-1"
-                        {...register("interview_source", {
-                          onChange: (event) => {
-                            const nextSource = event.target.value;
-                            if (nextSource === "generic") {
-                              setResumeSearch("");
-                              clearErrors("resume_id");
-                              setValue("resume_id", "");
-                            } else if (resumes.length && !selectedResumeId) {
-                              clearErrors("resume_id");
-                              setValue("resume_id", resumes[0].id, { shouldValidate: true });
-                            }
-                          },
-                        })}
-                      />
-                      <div>
-                        <p className="font-semibold">{source.label}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {source.value === "generic"
-                            ? "Generate questions from the job context only."
-                            : "Generate questions from the selected resume plus role context."}
-                        </p>
-                      </div>
-                    </label>
-                  );
-                })}
+              <div className="space-y-3">
+                <p className="text-sm font-medium tracking-tight text-foreground">Interview Source</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {interviewSources.map((source) => {
+                    const disabled = source.value === "resume_based" && (noResumesAvailable || loadingResumes);
+
+                    return (
+                      <label
+                        key={source.value}
+                        className={cn(
+                          "flex cursor-pointer items-start gap-3 rounded-2xl border border-border/60 p-4 transition duration-200 hover:-translate-y-0.5 hover:bg-muted/40",
+                          interviewSource === source.value && "border-primary bg-primary/5",
+                          disabled && "cursor-not-allowed opacity-60 hover:translate-y-0",
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          value={source.value}
+                          disabled={disabled}
+                          className="mt-1"
+                          {...register("interview_source", {
+                            onChange: (event) => {
+                              const nextSource = event.target.value;
+                              if (nextSource === "generic") {
+                                setResumeSearch("");
+                                clearErrors("resume_id");
+                                setValue("resume_id", "");
+                              } else if (resumes.length && !selectedResumeId) {
+                                clearErrors("resume_id");
+                                setValue("resume_id", resumes[0].id, { shouldValidate: true });
+                              }
+                            },
+                          })}
+                        />
+                        <div>
+                          <p className="font-semibold">{source.label}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {source.value === "generic"
+                              ? "Generate questions from the role and domain only."
+                              : "Generate questions using the selected resume plus role context."}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+                {noResumesAvailable ? (
+                  <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-800">
+                    Upload a resume first to enable resume-based interviews.
+                  </div>
+                ) : null}
               </div>
-              {noResumesAvailable ? (
-                <p className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-700">
-                  Upload a resume first to enable resume-based interviews.
-                </p>
-              ) : null}
             </div>
+          </section>
 
-            {interviewSource === "resume_based" ? (
-              <div className="md:col-span-2 space-y-3">
+          {interviewSource === "resume_based" ? (
+            <section className="space-y-4">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">Resume selection</p>
+                <p className="mt-1 text-sm text-muted-foreground">Pick the resume that should drive the interview context.</p>
+              </div>
+              <div className="grid gap-5 md:grid-cols-2">
                 <Input
                   label="Search Resumes"
                   placeholder="Search by filename or alias"
@@ -269,52 +285,57 @@ function InterviewForm() {
                   onChange={(event) => setResumeSearch(event.target.value)}
                   disabled={loadingResumes || noResumesAvailable}
                 />
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-foreground">Select Resume</span>
-                  <select
-                    className="h-11 w-full rounded-2xl border border-input bg-background px-4 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-                    disabled={loadingResumes || noResumesAvailable}
-                    value={selectedResumeId || ""}
-                    onChange={(event) => {
-                      clearErrors("resume_id");
-                      setValue("resume_id", event.target.value, { shouldValidate: true });
-                    }}
-                  >
-                    <option value="">{loadingResumes ? "Loading resumes..." : "Choose a resume"}</option>
-                    {filteredResumes.map((resume) => {
-                      const fileName = resume.file_path?.split("/").pop() || "Resume PDF";
-                      const label = resume.alias ? `${resume.alias} • ${fileName}` : fileName;
-                      return (
-                        <option key={resume.id} value={resume.id}>
-                          {label}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  {errors.resume_id?.message ? <p className="text-sm text-destructive">{errors.resume_id.message}</p> : null}
-                  {selectedResume ? (
-                    <p className="text-sm text-muted-foreground">
-                      Selected: <span className="font-medium text-foreground">{selectedResume.alias || selectedResume.file_path?.split("/").pop()}</span>
-                    </p>
-                  ) : null}
-                  {!loadingResumes && resumes.length > 0 && filteredResumes.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No resumes match your search.</p>
-                  ) : null}
-                </label>
+                <Select
+                  label="Select Resume"
+                  error={errors.resume_id?.message}
+                  disabled={loadingResumes || noResumesAvailable}
+                  value={selectedResumeId || ""}
+                  onChange={(event) => {
+                    clearErrors("resume_id");
+                    setValue("resume_id", event.target.value, { shouldValidate: true });
+                  }}
+                >
+                  <option value="">{loadingResumes ? "Loading resumes..." : "Choose a resume"}</option>
+                  {filteredResumes.map((resume) => {
+                    const fileName = resume.file_path?.split("/").pop() || "Resume PDF";
+                    const label = resume.alias ? `${resume.alias} • ${fileName}` : fileName;
+                    return (
+                      <option key={resume.id} value={resume.id}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </Select>
               </div>
-            ) : null}
 
-            <input type="hidden" {...register("resume_id")} />
+              {selectedResume ? (
+                <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
+                  Selected resume: <span className="font-medium text-foreground">{selectedResume.alias || selectedResume.file_path?.split("/").pop()}</span>
+                </div>
+              ) : null}
 
-            <div className="md:col-span-2">
-              <Button type="submit" className="w-full" isLoading={isSubmitting}>
-                Start Interview
-              </Button>
+              {!loadingResumes && resumes.length > 0 && filteredResumes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No resumes match your search.</p>
+              ) : null}
+
+            </section>
+          ) : null}
+
+          <input type="hidden" {...register("resume_id")} />
+
+          <div className="flex flex-col gap-3 border-t border-border/60 pt-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <MonitorPlay className="h-4 w-4" />
+              <span>Questions start on the live interview page after you submit this setup.</span>
             </div>
-          </form>
-        </CardContent>
-      </Card>
-    </Modal>
+            <Button type="submit" size="lg" className="min-w-52" isLoading={isSubmitting} disabled={isSubmitting}>
+              Start Interview
+              <Gauge className="h-4 w-4" />
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 

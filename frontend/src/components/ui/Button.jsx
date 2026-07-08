@@ -3,18 +3,18 @@ import { LoaderCircle } from "lucide-react";
 import { cn } from "@/utils/cn";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center rounded-2xl text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        primary: "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:translate-y-[-1px] hover:opacity-95",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        outline: "border border-border bg-transparent hover:bg-secondary",
-        ghost: "hover:bg-secondary",
-        destructive: "bg-destructive text-destructive-foreground hover:opacity-90",
+        primary: "bg-primary text-primary-foreground shadow-[0_12px_30px_rgba(14,165,233,0.18)] hover:-translate-y-0.5 hover:brightness-105",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80 hover:-translate-y-0.5",
+        outline: "border border-border/70 bg-transparent hover:border-border hover:bg-secondary/70",
+        ghost: "hover:bg-muted/80 hover:text-foreground",
+        destructive: "bg-destructive text-destructive-foreground hover:-translate-y-0.5 hover:opacity-95",
       },
       size: {
-        sm: "h-9 px-4",
+        sm: "h-9 px-3.5",
         md: "h-11 px-5",
         lg: "h-12 px-6",
         icon: "h-11 w-11",

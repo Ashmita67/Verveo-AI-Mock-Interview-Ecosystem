@@ -1,19 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, Clock3, Mic, Play, Send, SkipForward, Square, Video } from "lucide-react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { ArrowRight, Mic, Pause, Play, Square, Video } from "lucide-react";
 import toast from "react-hot-toast";
 import EmptyState from "@/components/common/EmptyState";
 import ErrorMessage from "@/components/common/ErrorMessage";
 import Loader from "@/components/common/Loader";
 import Badge from "@/components/ui/Badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import TextArea from "@/components/ui/TextArea";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import ProgressBar from "@/components/ui/ProgressBar";
-import { completeInterview, evaluateAudio, evaluateText, evaluateVideo, getInterview, getNextQuestion, skipQuestion } from "@/services/interviewService";
+import TextArea from "@/components/ui/TextArea";
+import {
+  completeInterview,
+  evaluateAudio,
+  evaluateText,
+  evaluateVideo,
+  getInterview,
+  getNextQuestion,
+} from "@/services/interviewService";
 import { clearInterviewSession, loadInterviewSession, saveInterviewSession } from "@/services/sessionService";
-
-const QUESTION_TIMEOUT_SECONDS = 60;
 
 function formatTime(seconds) {
   const minutes = Math.floor(seconds / 60);
@@ -37,11 +42,11 @@ function mergeUniqueById(primary = [], fallback = []) {
 function SessionPanel() {
   const navigate = useNavigate();
   const location = useLocation();
+  const params = useParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [session, setSession] = useState(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [questionRemainingSeconds, setQuestionRemainingSeconds] = useState(QUESTION_TIMEOUT_SECONDS);
   const [recordingState, setRecordingState] = useState("idle");
   const [recordedFile, setRecordedFile] = useState(null);
   const [recordedPreviewUrl, setRecordedPreviewUrl] = useState("");
@@ -53,14 +58,13 @@ function SessionPanel() {
   const videoPreviewRef = useRef(null);
   const chunksRef = useRef([]);
 
+  const interviewId = params.id;
   const currentQuestionIndex = session?.currentQuestionIndex ?? 0;
   const currentQuestion = useMemo(() => session?.questions?.[currentQuestionIndex] ?? null, [currentQuestionIndex, session]);
   const currentMode = session?.interviewMode || "text";
   const isTextMode = currentMode === "text";
   const progress = session?.questions?.length ? Math.min(100, ((currentQuestionIndex + 1) / session.questions.length) * 100) : 0;
-  const currentAnswerRecord = currentQuestion?.id ? session?.answers?.[currentQuestion.id] : null;
   const currentAnswerText = session?.answerText ?? "";
-  const currentEvaluation = session?.evaluation ?? null;
   const pendingNextQuestion = session?.pendingNextQuestion ?? null;
   const resumeName = session?.resumeName || session?.interview?.resume?.alias || session?.interview?.resume?.file_path?.split("/").pop() || "";
 
@@ -69,8 +73,7 @@ function SessionPanel() {
       if (!prev) {
         return prev;
       }
-      const next = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
-      return next;
+      return typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
     });
   };
 
@@ -81,13 +84,13 @@ function SessionPanel() {
       try {
         setLoading(true);
         const stored = loadInterviewSession();
-        const interviewId = location.state?.interviewId || stored?.interviewId;
+        const activeInterviewId = interviewId || location.state?.interviewId || stored?.interviewId;
 
-        if (!interviewId) {
+        if (!activeInterviewId) {
           throw new Error("No active interview session found. Start an interview to begin.");
         }
 
-        const interview = await getInterview(interviewId);
+        const interview = await getInterview(activeInterviewId);
         if (!mounted) return;
 
         const remoteQuestions = Array.isArray(interview.questions) ? interview.questions : [];
@@ -95,7 +98,7 @@ function SessionPanel() {
         const mergedQuestions = mergeUniqueById(remoteQuestions, storedQuestions);
         const mergedResponses = mergeUniqueById(Array.isArray(interview.responses) ? interview.responses : [], Array.isArray(stored?.responses) ? stored.responses : []);
         const nextSession = {
-          interviewId,
+          interviewId: activeInterviewId,
           interviewMode: interview.interview_mode || stored?.interviewMode || "text",
           interviewSource: interview.interview_source || stored?.interviewSource || "generic",
           interview: {
@@ -110,7 +113,6 @@ function SessionPanel() {
           startedAt: stored?.startedAt || interview.started_at || new Date().toISOString(),
           questionStartedAt: stored?.questionStartedAt || interview.started_at || new Date().toISOString(),
           answerText: stored?.answerText || "",
-          evaluation: stored?.evaluation || null,
           pendingNextQuestion: stored?.pendingNextQuestion || null,
           answers: stored?.answers || {},
           resumeName: interview.resume?.alias || interview.resume?.file_path?.split("/").pop() || stored?.resumeName || "",
@@ -137,32 +139,28 @@ function SessionPanel() {
     return () => {
       mounted = false;
     };
-  }, [location.state?.interviewId]);
+  }, [interviewId, location.state?.interviewId]);
 
   useEffect(() => {
-    if (!session || !isTextMode) {
-      setQuestionRemainingSeconds(QUESTION_TIMEOUT_SECONDS);
+    if (!session) {
       return undefined;
     }
 
     const interval = window.setInterval(() => {
       const startedAt = new Date(session.startedAt || Date.now()).getTime();
-      const questionStartedAt = new Date(session.questionStartedAt || session.startedAt || Date.now()).getTime();
       const now = Date.now();
       setElapsedSeconds(Math.max(0, Math.floor((now - startedAt) / 1000)));
-      const questionElapsed = Math.max(0, Math.floor((now - questionStartedAt) / 1000));
-      setQuestionRemainingSeconds(Math.max(0, QUESTION_TIMEOUT_SECONDS - questionElapsed));
     }, 1000);
 
     return () => window.clearInterval(interval);
-  }, [session, isTextMode]);
+  }, [session]);
 
   useEffect(() => {
     if (session?.startedAt) {
       const startedAt = new Date(session.startedAt).getTime();
       setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
     }
-  }, [currentQuestionIndex, currentMode, session?.questionStartedAt]);
+  }, [currentQuestionIndex, currentMode, session?.questionStartedAt, session?.startedAt]);
 
   useEffect(() => {
     if (!session) {
@@ -187,28 +185,6 @@ function SessionPanel() {
     videoPreviewRef.current.srcObject = mediaStreamRef.current;
     videoPreviewRef.current.play().catch(() => {});
   }, [currentMode, recordingState, session?.currentQuestionIndex]);
-
-  const persistAnswerResult = (questionId, response, evaluationPayload) => {
-    const answerText = evaluationPayload?.transcript || response?.transcript || response?.answer_text || session?.answerText || "";
-    updateSession((prev) => ({
-      ...prev,
-      evaluation: evaluationPayload,
-      answerText,
-      currentDifficulty: response?.difficulty || prev.currentDifficulty,
-      answers: {
-        ...(prev.answers || {}),
-        [questionId]: {
-          answerText,
-          transcript: evaluationPayload.transcript || response?.transcript || "",
-          score: response?.score ?? evaluationPayload?.score ?? 0,
-          isSkipped: response?.is_skipped || false,
-          evaluation: evaluationPayload,
-          response,
-        },
-      },
-      responses: mergeUniqueById(prev.responses || [], [response].filter(Boolean)),
-    }));
-  };
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
@@ -281,6 +257,27 @@ function SessionPanel() {
     }
   };
 
+  const persistAnswerResult = (questionId, response, evaluationPayload) => {
+    const answerText = evaluationPayload?.transcript || response?.transcript || response?.answer_text || session?.answerText || "";
+    updateSession((prev) => ({
+      ...prev,
+      answerText,
+      currentDifficulty: response?.difficulty || prev.currentDifficulty,
+      answers: {
+        ...(prev.answers || {}),
+        [questionId]: {
+          answerText,
+          transcript: evaluationPayload.transcript || response?.transcript || "",
+          score: response?.score ?? evaluationPayload?.score ?? 0,
+          isSkipped: response?.is_skipped || false,
+          evaluation: evaluationPayload,
+          response,
+        },
+      },
+      responses: mergeUniqueById(prev.responses || [], [response].filter(Boolean)),
+    }));
+  };
+
   const buildNextQuestion = async () => {
     const response = await getNextQuestion({
       interview_id: session.interviewId,
@@ -302,7 +299,8 @@ function SessionPanel() {
     return response;
   };
 
-  const advanceToNextQuestion = async (nextQuestionOverride = null, nextQuestionsOverride = null) => {
+  const advanceToNextQuestion = async (nextQuestionOverride = null, nextQuestionsOverride = null, options = {}) => {
+    const { silent = false } = options;
     try {
       setIsFetchingNext(true);
       setError("");
@@ -323,19 +321,18 @@ function SessionPanel() {
           currentQuestionIndex: nextIndex,
           questionStartedAt: new Date().toISOString(),
           answerText: "",
-          evaluation: null,
           pendingNextQuestion: null,
         };
       });
+
       setRecordedFile(null);
       if (recordedPreviewUrl) {
         URL.revokeObjectURL(recordedPreviewUrl);
         setRecordedPreviewUrl("");
       }
-      if (currentMode !== "text") {
-        setQuestionRemainingSeconds(QUESTION_TIMEOUT_SECONDS);
+      if (!silent) {
+        toast.success("Next question ready.");
       }
-      toast.success("Next question ready.");
       return nextQuestion;
     } catch (err) {
       setError(err?.response?.data?.detail || "Could not load the next question.");
@@ -383,40 +380,10 @@ function SessionPanel() {
       });
 
       const nextQuestion = await buildNextQuestion();
+      await advanceToNextQuestion(nextQuestion, mergeUniqueById(session.questions || [], [nextQuestion]), { silent: true });
       toast.success(`Answer scored: ${evaluationResult.score}%`);
-
-      if (currentMode !== "text") {
-        await advanceToNextQuestion(nextQuestion, mergeUniqueById(session.questions || [], [nextQuestion]));
-      }
     } catch (err) {
       setError(err?.response?.data?.detail || "Answer evaluation failed.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const skipCurrentQuestion = async () => {
-    if (!session || !currentQuestion || !isTextMode) {
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      setError("");
-      const skipped = await skipQuestion({
-        interview_id: session.interviewId,
-        question_id: currentQuestion.id,
-      });
-
-      persistAnswerResult(currentQuestion.id, skipped.response, {
-        ...skipped,
-        transcript: "",
-      });
-      const nextQuestion = await buildNextQuestion();
-      await advanceToNextQuestion(nextQuestion, mergeUniqueById(session.questions || [], [nextQuestion]));
-      toast.success("Question skipped.");
-    } catch (err) {
-      setError(err?.response?.data?.detail || "Could not skip the current question.");
     } finally {
       setIsSubmitting(false);
     }
@@ -435,7 +402,7 @@ function SessionPanel() {
       await completeInterview({ interview_id: session.interviewId });
       clearInterviewSession();
       toast.success(isTimeout ? "Interview ended after timeout." : "Interview completed.");
-      navigate(`/reports?interviewId=${session.interviewId}`, { replace: true });
+      navigate(`/reports/${session.interviewId}`, { replace: true });
     } catch (err) {
       setError(err?.response?.data?.detail || "We couldn't complete the interview.");
     } finally {
@@ -455,279 +422,186 @@ function SessionPanel() {
     return (
       <EmptyState
         title="No active interview session"
-        description="Start an interview from the builder to begin practicing with live questions."
+        description="Start an interview from the setup page to begin the live session."
         actionLabel="Start Interview"
         onAction={() => navigate("/interviews/create")}
       />
     );
   }
 
+  const footerItems = [
+    { label: "Interview mode", value: currentMode.charAt(0).toUpperCase() + currentMode.slice(1) },
+    { label: "Difficulty", value: session.currentDifficulty || currentQuestion.difficulty || session.interview?.difficulty || "—" },
+    { label: "Interview type", value: session.interview?.type || "—" },
+    { label: "Elapsed time", value: formatTime(elapsedSeconds) },
+  ];
+
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-      <Card className="overflow-hidden">
-        <div className="rounded-3xl bg-gradient-to-br from-primary via-primary/90 to-accent p-6 text-primary-foreground">
-          <Badge className="bg-white/15 text-white" variant="default">
-            Live AI Session
-          </Badge>
-          <h2 className="mt-4 text-3xl font-semibold">{session.interview?.title || "Interview Session"}</h2>
-          <p className="mt-2 max-w-2xl text-sm text-primary-foreground/80">
-            Adaptive questioning, live scoring, and contextual feedback based on your answers.
-          </p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            {currentMode !== "text" ? (
-              <Button variant="secondary" onClick={recordingState === "recording" ? pauseRecording : startRecording} disabled={isSubmitting || isCompleting}>
-                <Mic className="mr-2 h-4 w-4" />
-                {recordingState === "recording" ? "Pause Recording" : "Start Recording"}
-              </Button>
-            ) : null}
-            {currentMode !== "text" && recordingState === "paused" ? (
-              <Button variant="secondary" onClick={resumeRecording} disabled={isSubmitting || isCompleting}>
-                <Play className="mr-2 h-4 w-4" />
-                Resume
-              </Button>
-            ) : null}
-            {currentMode !== "text" && recordingState !== "idle" ? (
-              <Button variant="outline" className="border-white/30 text-white hover:bg-white/10" onClick={stopRecording} disabled={isSubmitting || isCompleting}>
-                <Square className="mr-2 h-4 w-4" />
-                Stop Recording
-              </Button>
-            ) : null}
-            <Button variant="outline" className="border-white/30 text-white hover:bg-white/10" onClick={() => completeCurrentInterview(false)} disabled={isSubmitting || isCompleting}>
-              End Interview
-            </Button>
-          </div>
-        </div>
-
-        <CardContent className="space-y-6 p-6">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <div className="rounded-2xl border border-border p-4">
-              <p className="text-sm text-muted-foreground">Interview Title</p>
-              <p className="mt-2 font-semibold">{session.interview?.title}</p>
-            </div>
-            <div className="rounded-2xl border border-border p-4">
-              <p className="text-sm text-muted-foreground">Domain</p>
-              <p className="mt-2 font-semibold">{session.interview?.domain}</p>
-            </div>
-            <div className="rounded-2xl border border-border p-4">
-              <p className="text-sm text-muted-foreground">Difficulty</p>
-              <p className="mt-2 font-semibold">{session.interview?.difficulty}</p>
-            </div>
-            <div className="rounded-2xl border border-border p-4">
-              <p className="text-sm text-muted-foreground">Interview Type</p>
-              <p className="mt-2 font-semibold">{session.interview?.type}</p>
-            </div>
-            <div className="rounded-2xl border border-border p-4">
-              <p className="text-sm text-muted-foreground">Interview Mode</p>
-              <p className="mt-2 font-semibold capitalize">{currentMode}</p>
-            </div>
-            <div className="rounded-2xl border border-border p-4">
-              <p className="text-sm text-muted-foreground">Resume Name</p>
-              <p className="mt-2 font-semibold">{resumeName || "Generic interview"}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm text-muted-foreground">Question {currentQuestionIndex + 1}</p>
-              <h3 className="mt-1 text-2xl font-semibold">{currentQuestion.question_text}</h3>
-            </div>
-            <Badge variant="info">{currentQuestion.difficulty}</Badge>
-          </div>
-
+    <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+      <Card className="border-border/60 bg-card/90 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur-xl">
+        <CardHeader className="mb-4 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Progress</span>
-              <span className="font-medium">{Math.round(progress)}%</span>
+            <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-primary">
+              Live Interview
+            </div>
+            <div>
+              <CardTitle className="text-2xl sm:text-3xl">{session.interview?.title || "Interview Session"}</CardTitle>
+              <CardDescription className="mt-2">
+                Question {currentQuestionIndex + 1} of {session.questions.length}
+              </CardDescription>
+            </div>
+          </div>
+          <Badge variant="info">{Math.round(progress)}% complete</Badge>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>Session progress</span>
+              <span>{currentQuestionIndex + 1} / {session.questions.length}</span>
             </div>
             <ProgressBar value={progress} />
           </div>
+        </CardContent>
+      </Card>
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl border border-border p-4">
-              <p className="text-sm text-muted-foreground">Elapsed Timer</p>
-              <p className="mt-2 text-2xl font-semibold">{formatTime(elapsedSeconds)}</p>
+      <Card className="flex flex-1 flex-col border-border/60 bg-card/90 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur-xl">
+        <CardContent className="flex flex-1 flex-col gap-6 p-6 sm:p-8">
+          <div className="flex flex-1 flex-col items-center justify-center gap-6 text-center">
+            <div className="max-w-4xl space-y-4">
+              <Badge variant="default" className="mx-auto">
+                Question {currentQuestionIndex + 1}
+              </Badge>
+              <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl lg:text-5xl">
+                {currentQuestion.question_text}
+              </h2>
             </div>
-            <div className="rounded-2xl border border-border p-4">
-              <p className="text-sm text-muted-foreground">Question Number</p>
-              <p className="mt-2 text-2xl font-semibold">
-                {currentQuestionIndex + 1}/{session.questions.length}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-border p-4">
-              <p className="text-sm text-muted-foreground">Current Score</p>
-              <p className="mt-2 text-2xl font-semibold">{currentEvaluation?.score != null ? `${currentEvaluation.score}%` : "—"}</p>
+
+            <div className="w-full max-w-4xl space-y-4">
+              {isTextMode ? (
+                <TextArea
+                  label="Your Answer"
+                  placeholder="Type your response here..."
+                  value={currentAnswerText}
+                  onChange={(event) => updateSession({ answerText: event.target.value })}
+                  className="min-h-48 text-base"
+                />
+              ) : (
+                <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                  <div className="rounded-[28px] border border-border/60 bg-muted/30 p-5 text-left">
+                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <Video className="h-4 w-4" />
+                      <span>{currentMode === "video" ? "Video" : "Audio"} response mode</span>
+                    </div>
+                    {currentMode === "video" ? (
+                      <div className="mt-4 overflow-hidden rounded-2xl border border-border/60 bg-black">
+                        <video ref={videoPreviewRef} className="h-56 w-full object-cover sm:h-72" muted playsInline autoPlay />
+                      </div>
+                    ) : null}
+                    <p className="mt-4 text-sm text-muted-foreground">
+                      {recordingState === "recording"
+                        ? "Recording in progress."
+                        : recordingState === "paused"
+                          ? "Recording paused."
+                          : recordedPreviewUrl
+                            ? "Your response is ready to submit."
+                            : "Start recording when you're ready to answer."}
+                    </p>
+                  </div>
+
+                  <div className="rounded-[28px] border border-border/60 bg-muted/30 p-5 text-left">
+                    <p className="text-sm font-semibold">Recorded answer</p>
+                    {recordedPreviewUrl ? (
+                      <div className="mt-4 space-y-3">
+                        <p className="text-sm text-muted-foreground">{recordedFile?.name}</p>
+                        {currentMode === "video" ? <video className="w-full rounded-2xl" src={recordedPreviewUrl} controls /> : null}
+                        {currentMode === "audio" ? <audio className="w-full" src={recordedPreviewUrl} controls /> : null}
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm text-muted-foreground">No recording captured yet.</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          {isTextMode ? (
-            <TextArea
-              label="Answer"
-              placeholder="Type your response here..."
-              value={currentAnswerText}
-              onChange={(event) => updateSession({ answerText: event.target.value })}
-              className="min-h-56"
-            />
-          ) : (
-            <div className="rounded-3xl border border-border p-5">
-              <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                <Video className="h-4 w-4" />
-                <span>{currentMode === "video" ? "Video" : "Audio"} response recording is enabled for this session.</span>
-              </div>
-              {currentMode === "video" ? (
-                <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-black">
-                  <video ref={videoPreviewRef} className="h-72 w-full object-cover" muted playsInline autoPlay />
-                </div>
-              ) : null}
-              {recordedPreviewUrl ? (
-                <div className="mt-4 rounded-2xl border border-border p-4">
-                  <p className="text-sm font-medium">Recorded answer ready for submission.</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{recordedFile?.name}</p>
-                  {currentMode === "video" ? <video className="mt-3 h-48 w-full rounded-xl" src={recordedPreviewUrl} controls /> : null}
-                  {currentMode === "audio" ? <audio className="mt-3 w-full" src={recordedPreviewUrl} controls /> : null}
-                </div>
-              ) : (
-                <p className="mt-4 text-sm text-muted-foreground">Record your response and stop it before submitting.</p>
-              )}
-              {isTextMode ? (
-                <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-                  <Clock3 className="h-4 w-4" />
-                  <span>Time remaining in this question: {formatTime(questionRemainingSeconds)}</span>
-                </div>
-              ) : null}
-            </div>
-          )}
-
-          {currentEvaluation ? (
-            <div className="rounded-3xl border border-border bg-secondary/40 p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm text-muted-foreground">Last evaluation</p>
-                  <p className="mt-1 text-2xl font-semibold">{currentEvaluation.score}%</p>
-                </div>
-                {currentEvaluation.transcript ? <Badge variant="info">Transcript captured</Badge> : null}
-              </div>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <div>
-                  <p className="text-sm font-semibold">Strengths</p>
-                  <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                    {(currentEvaluation.strengths || []).map((item) => (
-                      <li key={item}>• {item}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold">Weaknesses</p>
-                  <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                    {(currentEvaluation.weaknesses || []).map((item) => (
-                      <li key={item}>• {item}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold">Missing Concepts</p>
-                  <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                    {(currentEvaluation.missing_concepts || []).map((item) => (
-                      <li key={item}>• {item}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold">Ideal Answer</p>
-                  <p className="mt-2 text-sm text-muted-foreground">{currentEvaluation.ideal_answer || "—"}</p>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {currentAnswerRecord ? (
-            <div className="rounded-3xl border border-border p-5">
-              <p className="text-sm font-semibold">Stored response</p>
-              <p className="mt-2 text-sm text-muted-foreground">The latest response for this question has been saved to your interview history.</p>
+          {isSubmitting || isFetchingNext ? (
+            <div className="rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+              Generating the next question...
             </div>
           ) : null}
 
           {error ? <ErrorMessage title="Session error" description={error} /> : null}
 
-          <div className="flex flex-wrap gap-3">
-            <Button type="button" onClick={submitAnswer} isLoading={isSubmitting || isFetchingNext} disabled={Boolean(currentAnswerRecord) && isTextMode}>
-              <Send className="mr-2 h-4 w-4" />
-              Submit Answer
-            </Button>
-            {!isTextMode ? null : (
-              <>
-                <Button type="button" variant="outline" onClick={advanceToNextQuestion} isLoading={isFetchingNext} disabled={!pendingNextQuestion}>
-                  <ArrowRight className="mr-2 h-4 w-4" />
-                  Next Question
-                </Button>
-                <Button type="button" variant="outline" onClick={skipCurrentQuestion} isLoading={isSubmitting}>
-                  <SkipForward className="mr-2 h-4 w-4" />
-                  Skip Question
-                </Button>
-              </>
-            )}
-            <Button type="button" variant="outline" onClick={() => completeCurrentInterview(false)} isLoading={isCompleting}>
+          <div className="flex flex-col gap-3 border-t border-border/60 pt-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {!isTextMode ? (
+                <>
+                  {recordingState === "idle" ? (
+                    <Button type="button" onClick={startRecording} disabled={isSubmitting || isFetchingNext || isCompleting}>
+                      <Mic className="h-4 w-4" />
+                      Start Recording
+                    </Button>
+                  ) : null}
+                  {recordingState === "recording" ? (
+                    <Button type="button" variant="outline" onClick={pauseRecording} disabled={isSubmitting || isFetchingNext || isCompleting}>
+                      <Pause className="h-4 w-4" />
+                      Pause
+                    </Button>
+                  ) : null}
+                  {recordingState === "paused" ? (
+                    <Button type="button" variant="outline" onClick={resumeRecording} disabled={isSubmitting || isFetchingNext || isCompleting}>
+                      <Play className="h-4 w-4" />
+                      Resume
+                    </Button>
+                  ) : null}
+                  {recordingState !== "idle" ? (
+                    <Button type="button" variant="outline" onClick={stopRecording} disabled={isSubmitting || isFetchingNext || isCompleting}>
+                      <Square className="h-4 w-4" />
+                      Stop
+                    </Button>
+                  ) : null}
+                </>
+              ) : null}
+              <Button type="button" onClick={submitAnswer} isLoading={isSubmitting || isFetchingNext} disabled={isSubmitting || isFetchingNext || isCompleting}>
+                Submit Answer
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => advanceToNextQuestion()}
+                isLoading={isFetchingNext}
+                disabled={isSubmitting || isFetchingNext || isCompleting}
+              >
+                <ArrowRight className="h-4 w-4" />
+                Next Question
+              </Button>
+            </div>
+
+            <Button type="button" variant="destructive" onClick={() => completeCurrentInterview(false)} isLoading={isCompleting} disabled={isSubmitting || isFetchingNext}>
               End Interview
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>Interview Progress</CardTitle>
-              <CardDescription>Session status and pacing.</CardDescription>
+      <Card className="border-border/60 bg-card/90 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+        <CardContent className="grid gap-3 md:grid-cols-4">
+          {footerItems.map((item) => (
+            <div key={item.label} className="rounded-2xl border border-border/60 bg-muted/30 p-4">
+              <p className="text-sm text-muted-foreground">{item.label}</p>
+              <p className="mt-1 font-semibold">{item.value}</p>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <ProgressBar value={progress} />
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Questions Attempted</span>
-              <span className="font-semibold">{currentQuestionIndex + 1}</span>
+          ))}
+          {resumeName ? (
+            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 md:col-span-4">
+              <p className="text-sm text-muted-foreground">Resume used</p>
+              <p className="mt-1 font-semibold">{resumeName}</p>
             </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Interview Mode</span>
-              <span className="font-semibold capitalize">{currentMode}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Current Difficulty</span>
-              <span className="font-semibold">{session.currentDifficulty || currentQuestion.difficulty}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>Question Queue</CardTitle>
-              <CardDescription>All generated questions for this session.</CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {session.questions.map((question, index) => {
-              const response = session.responses?.find((item) => item.question_id === question.id);
-              return (
-                <div
-                  key={question.id || `${question.question_text}-${index}`}
-                  className={`rounded-2xl border p-4 ${index === currentQuestionIndex ? "border-primary bg-primary/5" : "border-border"}`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-medium">Question {index + 1}</p>
-                    <Badge variant={index === currentQuestionIndex ? "info" : "default"}>{question.difficulty}</Badge>
-                  </div>
-                  <p className="mt-2 text-sm text-muted-foreground">{question.question_text}</p>
-                  {response ? (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {response.is_skipped ? "Skipped" : `Answered${response.score != null ? ` • ${response.score}%` : ""}`}
-                    </p>
-                  ) : null}
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      </div>
+          ) : null}
+        </CardContent>
+      </Card>
     </div>
   );
 }

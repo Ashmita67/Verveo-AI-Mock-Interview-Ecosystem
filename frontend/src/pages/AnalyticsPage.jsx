@@ -364,7 +364,7 @@ function AnalyticsPage() {
         <CardContent className="space-y-3">
           {recentHistory.length ? (
             recentHistory.map((item) => (
-              <div key={String(item.id)} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border p-4">
+              <div key={String(item.id)} className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] bg-muted/50 p-4">
                 <div>
                   <p className="font-semibold">{item.title}</p>
                   <p className="mt-1 text-xs text-muted-foreground">

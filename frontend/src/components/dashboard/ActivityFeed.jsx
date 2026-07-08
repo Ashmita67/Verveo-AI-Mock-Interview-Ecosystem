@@ -18,33 +18,23 @@ function ActivityFeed({ sessions = [] }) {
       </CardHeader>
 
       {recentSessions.length ? (
-        <div className="overflow-hidden rounded-2xl border border-border">
-          <table className="min-w-full divide-y divide-border text-left text-sm">
-            <thead className="bg-secondary/60 text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3 font-medium">Title</th>
-                <th className="px-4 py-3 font-medium">Domain</th>
-                <th className="px-4 py-3 font-medium">Difficulty</th>
-                <th className="px-4 py-3 font-medium">Score</th>
-                <th className="px-4 py-3 font-medium">Date</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {recentSessions.map((session) => (
-                <tr key={session.id} className="bg-card">
-                  <td className="px-4 py-3 font-medium">{session.title}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{session.domain}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{session.difficulty}</td>
-                  <td className="px-4 py-3">
-                    <Badge variant="info">{session.overall_score ?? "—"}</Badge>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {session.created_at ? format(new Date(session.created_at), "MMM d, yyyy") : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="grid gap-3">
+          {recentSessions.slice(0, 5).map((session) => (
+            <div key={session.id} className="flex flex-col gap-4 rounded-[24px] bg-muted/40 p-5 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-1">
+                <p className="text-base font-semibold tracking-tight text-foreground">{session.title}</p>
+                <p className="text-sm text-muted-foreground">
+                  {session.domain} · {session.difficulty} · {session.type}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge variant="info">{session.overall_score ?? "—"}</Badge>
+                <span className="text-xs text-muted-foreground">
+                  {session.created_at ? format(new Date(session.created_at), "MMM d, yyyy") : "—"}
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       ) : (
         <EmptyState

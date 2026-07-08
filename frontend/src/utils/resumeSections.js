@@ -4,9 +4,10 @@ const SECTION_HEADERS = {
   experience: ["experience", "work experience", "professional experience"],
   education: ["education", "academic background"],
   certifications: ["certifications", "licenses", "credentials"],
+  achievements: ["achievements", "awards", "accomplishments"],
 };
 
-export const RESUME_SECTION_KEYS = ["skills", "projects", "experience", "education", "certifications"];
+export const RESUME_SECTION_KEYS = ["skills", "projects", "experience", "education", "certifications", "achievements"];
 
 function normalizeLine(line) {
   return line.trim().replace(/^[-•*]\s*/, "");
@@ -29,6 +30,7 @@ export function parseResumeSections(parsedText = "") {
     experience: [],
     education: [],
     certifications: [],
+    achievements: [],
   };
 
   const lines = String(parsedText)
@@ -79,6 +81,7 @@ export function buildResumeSummary(resume) {
     experienceCount: sections.experience.length,
     educationCount: sections.education.length,
     certificationCount: sections.certifications.length,
+    achievementCount: sections.achievements.length,
     sections,
   };
 }

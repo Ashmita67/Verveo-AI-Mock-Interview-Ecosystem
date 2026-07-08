@@ -1,16 +1,11 @@
-import PageHeader from "@/components/common/PageHeader";
 import InterviewForm from "@/components/interview/InterviewForm";
 
 function InterviewCreationPage() {
   return (
-    <div className="space-y-8">
-      <PageHeader
-        eyebrow="Interview Builder"
-        title="Design a focused practice session"
-        description="Create role-specific interview loops that target the skills and signals hiring teams care about."
-        badge="AI-configurable"
-      />
-      <InterviewForm />
+    <div className="flex min-h-screen items-center px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-5xl items-center">
+        <InterviewForm />
+      </div>
     </div>
   );
 }

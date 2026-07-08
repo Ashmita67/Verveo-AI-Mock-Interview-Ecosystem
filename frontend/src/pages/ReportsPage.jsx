@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { format } from "date-fns";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import EmptyState from "@/components/common/EmptyState";
 import ErrorMessage from "@/components/common/ErrorMessage";
 import Loader from "@/components/common/Loader";
-import PageHeader from "@/components/common/PageHeader";
 import Badge from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import ProgressBar from "@/components/ui/ProgressBar";
 import { generateReport, getReport } from "@/services/reportService";
 import { getInterview, listInterviews } from "@/services/interviewService";
-import { listResumes } from "@/services/resumeService";
 
 function splitTextList(value) {
   if (!value) return [];
@@ -37,138 +38,116 @@ function parseFeedback(value) {
   return value;
 }
 
+function formatDateTime(value) {
+  if (!value) return "—";
+  try {
+    return format(new Date(value), "MMM d, yyyy • h:mm a");
+  } catch {
+    return "—";
+  }
+}
+
 function ReportsPage() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const params = useParams();
+  const [searchParams] = useSearchParams();
+  const interviewIdParam = searchParams.get("interviewId");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [interviews, setInterviews] = useState([]);
-  const [resumes, setResumes] = useState([]);
-  const [selectedInterviewId, setSelectedInterviewId] = useState("");
+  const [selectedInterviewId, setSelectedInterviewId] = useState(params.id || interviewIdParam || "");
   const [interviewDetail, setInterviewDetail] = useState(null);
   const [report, setReport] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
-  const [filters, setFilters] = useState({
-    domain: "all",
-    difficulty: "all",
-    type: "all",
-    resume: "all",
-  });
 
   useEffect(() => {
     let mounted = true;
 
-    async function loadHistory() {
+    async function resolveInterviewId() {
+      const routeInterviewId = params.id || interviewIdParam;
+      if (routeInterviewId) {
+        setSelectedInterviewId(routeInterviewId);
+        return;
+      }
+
       try {
         setLoading(true);
-        const settled = await Promise.allSettled([listInterviews(), listResumes()]);
+        const interviews = await listInterviews();
         if (!mounted) return;
-
-        const interviewItems = settled[0].status === "fulfilled" ? settled[0].value : [];
-        const resumeItems = settled[1].status === "fulfilled" ? settled[1].value : [];
-        const ordered = [...interviewItems].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-        setInterviews(ordered);
-        setResumes(resumeItems);
-
-        const queryInterviewId = searchParams.get("interviewId");
-        setSelectedInterviewId(queryInterviewId || ordered[0]?.id || "");
-
-        if (settled.some((result) => result.status === "rejected")) {
-          toast.error("Some history data could not be loaded.");
+        const latestInterview = [...interviews].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0];
+        if (latestInterview?.id) {
+          setSelectedInterviewId(latestInterview.id);
+          return;
         }
+        setSelectedInterviewId("");
+        setLoading(false);
       } catch (err) {
         if (mounted) {
-          setError(err?.response?.data?.detail || "We couldn't load reports right now.");
-        }
-      } finally {
-        if (mounted) {
+          setError(err?.response?.data?.detail || "We couldn't load the report history.");
           setLoading(false);
         }
       }
     }
 
-    loadHistory();
+    resolveInterviewId();
 
     return () => {
       mounted = false;
     };
-  }, [searchParams]);
+  }, [params.id, interviewIdParam]);
 
   useEffect(() => {
     if (!selectedInterviewId) {
       setInterviewDetail(null);
       setReport(null);
+      setLoading(false);
       return;
     }
 
-    setSearchParams({ interviewId: selectedInterviewId }, { replace: true });
-
     let mounted = true;
 
-    async function loadSelectedInterview() {
+    async function loadReport() {
       try {
+        setLoading(true);
         setReportLoading(true);
         setError("");
-        const [detail, reportData] = await Promise.allSettled([getInterview(selectedInterviewId), getReport(selectedInterviewId)]);
+        const [detailResult, reportResult] = await Promise.allSettled([getInterview(selectedInterviewId), getReport(selectedInterviewId)]);
+
         if (!mounted) return;
 
-        setInterviewDetail(detail.status === "fulfilled" ? detail.value : null);
-        setReport(reportData.status === "fulfilled" ? reportData.value : null);
+        setInterviewDetail(detailResult.status === "fulfilled" ? detailResult.value : null);
+        setReport(reportResult.status === "fulfilled" ? reportResult.value : null);
+        if (detailResult.status === "rejected" && reportResult.status === "rejected") {
+          setError("Unable to load this interview report.");
+        }
       } catch (err) {
         if (mounted) {
           setError(err?.response?.data?.detail || "Unable to load report details.");
         }
       } finally {
         if (mounted) {
+          setLoading(false);
           setReportLoading(false);
         }
       }
     }
 
-    loadSelectedInterview();
+    loadReport();
 
     return () => {
       mounted = false;
     };
-  }, [selectedInterviewId, setSearchParams]);
+  }, [selectedInterviewId]);
 
-  const resumeMap = useMemo(() => {
-    return new Map(resumes.map((resume) => [resume.id, resume]));
-  }, [resumes]);
-
-  const filteredInterviews = useMemo(() => {
-    return interviews.filter((item) => {
-      if (filters.domain !== "all" && item.domain !== filters.domain) return false;
-      if (filters.difficulty !== "all" && item.difficulty !== filters.difficulty) return false;
-      if (filters.type !== "all" && item.type !== filters.type) return false;
-      if (filters.resume !== "all" && String(item.resume_id || "") !== filters.resume) return false;
-      return true;
-    });
-  }, [filters, interviews]);
-
-  const selectedInterview = useMemo(
-    () => interviews.find((item) => item.id === selectedInterviewId) || null,
-    [interviews, selectedInterviewId],
+  const resume = interviewDetail?.resume || null;
+  const overallScore = report?.overall_score ?? interviewDetail?.overall_score ?? null;
+  const skillBreakdown = useMemo(
+    () => [
+      { label: "Technical", value: report?.technical_score },
+      { label: "Communication", value: report?.communication_score },
+      { label: "Problem Solving", value: report?.problem_solving_score },
+    ],
+    [report],
   );
-
-  const selectedResume = useMemo(() => {
-    if (!interviewDetail?.resume_id) return null;
-    return interviewDetail.resume || resumeMap.get(interviewDetail.resume_id) || null;
-  }, [interviewDetail, resumeMap]);
-
-  const resumeOptions = useMemo(() => {
-    const seen = new Map();
-    interviews.forEach((item) => {
-      if (!item.resume_id) return;
-      if (seen.has(item.resume_id)) return;
-      const resume = resumeMap.get(item.resume_id);
-      seen.set(item.resume_id, {
-        id: item.resume_id,
-        label: resume?.alias || resume?.file_path?.split("/").pop() || `Resume ${String(item.resume_id).slice(0, 8)}`,
-      });
-    });
-    return Array.from(seen.values());
-  }, [interviews, resumeMap]);
 
   const questionReview = useMemo(() => {
     const questions = interviewDetail?.questions || [];
@@ -185,11 +164,17 @@ function ReportsPage() {
     });
   }, [interviewDetail]);
 
+  const strengths = splitTextList(report?.strengths);
+  const weaknesses = splitTextList(report?.weaknesses);
+  const recommendations = splitTextList(report?.recommendations);
+
   const handleGenerateReport = async () => {
+    if (!selectedInterviewId) return;
     try {
       setReportLoading(true);
       const generated = await generateReport(selectedInterviewId);
       setReport(generated);
+      toast.success("Report generated successfully.");
     } catch (err) {
       setError(err?.response?.data?.detail || "Could not generate the report.");
     } finally {
@@ -197,351 +182,298 @@ function ReportsPage() {
     }
   };
 
-  if (loading) {
-    return <Loader label="Loading reports..." />;
+  if (loading && !interviewDetail && !report) {
+    return <Loader label="Loading report..." />;
   }
 
-  if (error && !interviews.length) {
-    return <ErrorMessage title="Reports unavailable" description={error} />;
+  if (error && !interviewDetail && !report) {
+    return <ErrorMessage title="Report unavailable" description={error} />;
   }
 
-  if (!interviews.length) {
+  if (!selectedInterviewId) {
     return (
-      <div className="space-y-8">
-        <PageHeader
-          eyebrow="Reports"
-          title="Session-level feedback and scoring"
-          description="Understand where your answers land strongest and where your next improvements will matter most."
-          badge="No interviews yet"
-        />
-        <EmptyState
-          title="No interviews available"
-          description="Complete an interview to generate report analytics and feedback."
-          actionLabel="Start Interview"
-          onAction={() => navigate("/interviews/create")}
-        />
-      </div>
+      <EmptyState
+        title="No interview available"
+        description="Complete an interview to generate a professional report."
+        actionLabel="Start Interview"
+        onAction={() => navigate("/interviews/create")}
+      />
     );
   }
 
-  const metrics = [
-    { label: "Overall Score", value: report?.overall_score },
-    { label: "Technical Score", value: report?.technical_score },
-    { label: "Communication Score", value: report?.communication_score },
-    { label: "Problem Solving Score", value: report?.problem_solving_score },
-  ];
-
   return (
-    <div className="space-y-8">
-      <PageHeader
-        eyebrow="Reports"
-        title="Session-level feedback and scoring"
-        description="Understand where your answers land strongest and where your next improvements will matter most."
-        badge={report ? "Report loaded" : "No report yet"}
-      />
-
-      <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>History Filters</CardTitle>
-                <CardDescription>Slice interview history by the dimensions you care about.</CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <label className="block space-y-2">
-                <span className="text-sm font-medium text-foreground">Domain</span>
-                <select className="h-11 w-full rounded-2xl border border-input bg-background px-4 text-sm outline-none" value={filters.domain} onChange={(event) => setFilters((prev) => ({ ...prev, domain: event.target.value }))}>
-                  <option value="all">All domains</option>
-                  {[...new Set(interviews.map((item) => item.domain))].map((domain) => (
-                    <option key={domain} value={domain}>
-                      {domain}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block space-y-2">
-                <span className="text-sm font-medium text-foreground">Difficulty</span>
-                <select className="h-11 w-full rounded-2xl border border-input bg-background px-4 text-sm outline-none" value={filters.difficulty} onChange={(event) => setFilters((prev) => ({ ...prev, difficulty: event.target.value }))}>
-                  <option value="all">All difficulties</option>
-                  {[...new Set(interviews.map((item) => item.difficulty))].map((difficulty) => (
-                    <option key={difficulty} value={difficulty}>
-                      {difficulty}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block space-y-2">
-                <span className="text-sm font-medium text-foreground">Interview Type</span>
-                <select className="h-11 w-full rounded-2xl border border-input bg-background px-4 text-sm outline-none" value={filters.type} onChange={(event) => setFilters((prev) => ({ ...prev, type: event.target.value }))}>
-                  <option value="all">All types</option>
-                  {[...new Set(interviews.map((item) => item.type))].map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block space-y-2">
-                <span className="text-sm font-medium text-foreground">Resume</span>
-                <select className="h-11 w-full rounded-2xl border border-input bg-background px-4 text-sm outline-none" value={filters.resume} onChange={(event) => setFilters((prev) => ({ ...prev, resume: event.target.value }))}>
-                  <option value="all">All resumes</option>
-                  {resumeOptions.map((resume) => (
-                    <option key={resume.id} value={resume.id}>
-                      {resume.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>Interview History</CardTitle>
-                <CardDescription>Open any previous report or session snapshot.</CardDescription>
-              </div>
-              <Badge variant="info">{filteredInterviews.length} shown</Badge>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {filteredInterviews.length ? (
-                filteredInterviews.map((item) => {
-                  const isSelected = item.id === selectedInterviewId;
-                  const resume = item.resume_id ? resumeMap.get(item.resume_id) : null;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={`w-full rounded-2xl border p-4 text-left transition ${isSelected ? "border-primary bg-primary/5" : "border-border hover:bg-secondary/40"}`}
-                      onClick={() => setSelectedInterviewId(item.id)}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-semibold">{item.title}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {item.domain} • {item.difficulty} • {item.type}
-                          </p>
-                        </div>
-                        {item.overall_score != null ? <Badge variant="info">{item.overall_score}%</Badge> : <Badge variant="default">Draft</Badge>}
-                      </div>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {resume?.alias || resume?.file_path?.split("/").pop() || (item.resume_id ? `Resume ${String(item.resume_id).slice(0, 8)}` : "Generic interview")}
-                      </p>
-                    </button>
-                  );
-                })
-              ) : (
-                <EmptyState title="No matching interviews" description="Adjust the filters to surface more sessions." />
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {metrics.map((metric) => (
-              <Card key={metric.label}>
-                <CardContent className="p-5">
-                  <p className="text-sm text-muted-foreground">{metric.label}</p>
-                  <h3 className="mt-3 text-3xl font-semibold">{metric.value != null ? `${metric.value}%` : "—"}</h3>
-                </CardContent>
-              </Card>
-            ))}
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+      <Card className="border-border/60 bg-card/90 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur-xl">
+        <CardContent className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)] lg:p-8">
+          <div className="space-y-4">
+            <div className="inline-flex items-center rounded-full border border-border/60 bg-muted/50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-primary">
+              Interview Report
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{interviewDetail?.title || "Assessment Report"}</h1>
+              <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
+                A focused summary of performance, feedback, and next steps for this session.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="info">{interviewDetail?.domain || "—"}</Badge>
+              <Badge variant="default">{interviewDetail?.difficulty || "—"}</Badge>
+              <Badge variant="default">{interviewDetail?.type || "—"}</Badge>
+              <Badge variant="default">{interviewDetail?.interview_mode || "—"}</Badge>
+            </div>
           </div>
 
-          {reportLoading ? <Loader label="Loading report data..." /> : null}
-
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>Interview Summary</CardTitle>
-                <CardDescription>Overview of the selected interview session.</CardDescription>
-              </div>
-              {selectedInterview ? <Badge variant="info">{selectedInterview.title}</Badge> : null}
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <div className="rounded-2xl border border-border p-4">
-                <p className="text-sm text-muted-foreground">Domain</p>
-                <p className="mt-2 font-semibold">{selectedInterview?.domain || "—"}</p>
-              </div>
-              <div className="rounded-2xl border border-border p-4">
-                <p className="text-sm text-muted-foreground">Difficulty</p>
-                <p className="mt-2 font-semibold">{selectedInterview?.difficulty || "—"}</p>
-              </div>
-              <div className="rounded-2xl border border-border p-4">
-                <p className="text-sm text-muted-foreground">Interview Type</p>
-                <p className="mt-2 font-semibold">{selectedInterview?.type || "—"}</p>
-              </div>
-              <div className="rounded-2xl border border-border p-4">
-                <p className="text-sm text-muted-foreground">Interview Mode</p>
-                <p className="mt-2 font-semibold capitalize">{interviewDetail?.interview_mode || selectedInterview?.interview_mode || "—"}</p>
-              </div>
-              <div className="rounded-2xl border border-border p-4">
-                <p className="text-sm text-muted-foreground">Resume Used</p>
-                <p className="mt-2 font-semibold">{selectedResume?.alias || selectedResume?.file_path?.split("/").pop() || "Generic interview"}</p>
-              </div>
-              <div className="rounded-2xl border border-border p-4">
-                <p className="text-sm text-muted-foreground">Status</p>
-                <p className="mt-2 font-semibold">{selectedInterview?.status || "—"}</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {report ? (
-            <div className="grid gap-6 xl:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <div>
-                    <CardTitle>Strengths, Weaknesses & Recommendations</CardTitle>
-                    <CardDescription>Extracted from the live backend report.</CardDescription>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div>
-                    <p className="text-sm font-semibold">Strengths</p>
-                    <div className="mt-3 space-y-2">
-                      {splitTextList(report.strengths).length ? (
-                        splitTextList(report.strengths).map((item) => (
-                          <div key={item} className="rounded-2xl border border-border px-4 py-3 text-sm text-muted-foreground">
-                            {item}
-                          </div>
-                        ))
-                      ) : (
-                        <EmptyState title="No strengths listed" description="The backend has not generated strengths yet." />
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold">Weaknesses</p>
-                    <div className="mt-3 space-y-2">
-                      {splitTextList(report.weaknesses).length ? (
-                        splitTextList(report.weaknesses).map((item) => (
-                          <div key={item} className="rounded-2xl border border-border px-4 py-3 text-sm text-muted-foreground">
-                            {item}
-                          </div>
-                        ))
-                      ) : (
-                        <EmptyState title="No weaknesses listed" description="The backend has not generated weaknesses yet." />
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold">Recommendations</p>
-                    <div className="mt-3 space-y-2">
-                      {splitTextList(report.recommendations).length ? (
-                        splitTextList(report.recommendations).map((item) => (
-                          <div key={item} className="rounded-2xl border border-border px-4 py-3 text-sm text-muted-foreground">
-                            {item}
-                          </div>
-                        ))
-                      ) : (
-                        <EmptyState title="No recommendations yet" description="The backend has not generated recommendations yet." />
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div>
-                    <CardTitle>Missing Concepts</CardTitle>
-                    <CardDescription>Where the interviewer found gaps in the answer set.</CardDescription>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {questionReview.some((item) => item.feedback?.missing_concepts?.length) ? (
-                    questionReview.flatMap((item) => item.feedback?.missing_concepts || []).map((concept) => (
-                      <div key={concept} className="rounded-2xl border border-border px-4 py-3 text-sm text-muted-foreground">
-                        {concept}
-                      </div>
-                    ))
-                  ) : (
-                    <EmptyState title="No missing concepts recorded" description="The selected interview does not yet include concept gaps." />
-                  )}
-                </CardContent>
-              </Card>
+          <div className="rounded-[28px] border border-border/60 bg-muted/30 p-6">
+            <p className="text-sm text-muted-foreground">Overall Score</p>
+            <div className="mt-3 flex items-end gap-3">
+              <h2 className="text-5xl font-semibold tracking-tight">{overallScore != null ? `${overallScore}%` : "—"}</h2>
+              <span className="pb-1 text-sm text-muted-foreground">from the completed interview</span>
             </div>
-          ) : (
-            <Card>
-              <CardHeader>
-                <div>
-                  <CardTitle>No report yet</CardTitle>
-                  <CardDescription>Generate the backend report for this interview to view scoring and recommendations.</CardDescription>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <EmptyState
-                  title="Report not available"
-                  description="This interview may still be in progress. Generate the report when the session is complete."
-                  actionLabel="Generate Report"
-                  onAction={handleGenerateReport}
-                />
-              </CardContent>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>Question Review</CardTitle>
-                <CardDescription>Question, answer, AI feedback, score, and the ideal answer for each turn.</CardDescription>
+            <div className="mt-5 space-y-2">
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <span>Score trend</span>
+                <span>{overallScore != null ? "Generated report" : "Pending"}</span>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {questionReview.length ? (
-                questionReview.map(({ question, response, feedback }) => (
-                  <div key={question.id} className="rounded-3xl border border-border p-5">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Question {question.question_order}</p>
-                        <p className="mt-1 font-semibold">{question.question_text}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {response?.is_skipped ? <Badge variant="default">Skipped</Badge> : null}
-                        <Badge variant="info">{response?.score != null ? `${response.score}%` : "—"}</Badge>
+              <ProgressBar value={overallScore ?? 0} />
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-border/60 bg-card/80 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Generated</p>
+                <p className="mt-1 text-sm font-medium">{formatDateTime(report?.generated_at)}</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-card/80 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Status</p>
+                <p className="mt-1 text-sm font-medium">{interviewDetail?.status || "—"}</p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {reportLoading ? <Loader label="Loading report data..." /> : null}
+
+      <div className="grid gap-6 xl:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>AI Feedback</CardTitle>
+              <CardDescription>High-level takeaways from the session report.</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="text-sm font-semibold">Strengths</p>
+              <div className="mt-3 space-y-2">
+                {strengths.length ? (
+                  strengths.map((item) => (
+                    <div key={item} className="rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+                      {item}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">No strengths were generated yet.</p>
+                )}
+              </div>
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Weaknesses</p>
+              <div className="mt-3 space-y-2">
+                {weaknesses.length ? (
+                  weaknesses.map((item) => (
+                    <div key={item} className="rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+                      {item}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">No weaknesses were generated yet.</p>
+                )}
+              </div>
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Recommendations</p>
+              <div className="mt-3 space-y-2">
+                {recommendations.length ? (
+                  recommendations.map((item) => (
+                    <div key={item} className="rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+                      {item}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">No recommendations were generated yet.</p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Skill Breakdown</CardTitle>
+              <CardDescription>Core dimensions captured by the backend report.</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {skillBreakdown.map((item) => (
+              <div key={item.label} className="space-y-2 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold">{item.label}</p>
+                  <Badge variant="info">{item.value != null ? `${item.value}%` : "—"}</Badge>
+                </div>
+                <ProgressBar value={item.value ?? 0} className="h-2.5" />
+              </div>
+            ))}
+            {skillBreakdown.every((item) => item.value == null) ? (
+              <p className="text-sm text-muted-foreground">No skill breakdown values were returned for this interview.</p>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Interview Metadata</CardTitle>
+              <CardDescription>Session details and source context.</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Interview title</p>
+              <p className="mt-1 font-medium">{interviewDetail?.title || "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Domain</p>
+              <p className="mt-1 font-medium">{interviewDetail?.domain || "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Difficulty</p>
+              <p className="mt-1 font-medium">{interviewDetail?.difficulty || "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Interview mode</p>
+              <p className="mt-1 font-medium capitalize">{interviewDetail?.interview_mode || "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Interview source</p>
+              <p className="mt-1 font-medium">{interviewDetail?.interview_source || "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Completed at</p>
+              <p className="mt-1 font-medium">{formatDateTime(interviewDetail?.completed_at || report?.generated_at)}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Question-wise Evaluation</CardTitle>
+              <CardDescription>Per-question answer quality, feedback, and scoring.</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {questionReview.length ? (
+              questionReview.map(({ question, response, feedback }) => (
+                <div key={question.id} className="rounded-[28px] border border-border/60 bg-card/80 p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Question {question.question_order}</p>
+                      <p className="text-base font-semibold">{question.question_text}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {response?.is_skipped ? <Badge variant="default">Skipped</Badge> : null}
+                      <Badge variant="info">{response?.score != null ? `${response.score}%` : "—"}</Badge>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+                      <p className="text-sm font-semibold">Answer</p>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{response?.answer_text || "—"}</p>
+                    </div>
+                    <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+                      <p className="text-sm font-semibold">Ideal Answer</p>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{response?.ideal_answer || "—"}</p>
+                    </div>
+                    <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+                      <p className="text-sm font-semibold">Strengths</p>
+                      <div className="mt-2 space-y-2">
+                        {(feedback?.strengths || []).length ? (
+                          feedback.strengths.map((item) => (
+                            <div key={item} className="rounded-xl bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+                              {item}
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No strengths recorded.</p>
+                        )}
                       </div>
                     </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <div>
-                        <p className="text-sm font-semibold">User Answer</p>
-                        <p className="mt-2 text-sm text-muted-foreground">{response?.answer_text || response?.transcript || "—"}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold">AI Feedback</p>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          {[
-                            ...(feedback?.strengths || []),
-                            ...(feedback?.weaknesses || []),
-                            ...(feedback?.missing_concepts || []),
-                          ].length
-                            ? [
-                                ...(feedback?.strengths || []).map((item) => `Strength: ${item}`),
-                                ...(feedback?.weaknesses || []).map((item) => `Weakness: ${item}`),
-                                ...(feedback?.missing_concepts || []).map((item) => `Missing: ${item}`),
-                              ].join(" ")
-                            : "—"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold">Ideal Answer</p>
-                        <p className="mt-2 text-sm text-muted-foreground">{response?.ideal_answer || "—"}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold">Transcript</p>
-                        <p className="mt-2 text-sm text-muted-foreground">{response?.transcript || "—"}</p>
+                    <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+                      <p className="text-sm font-semibold">Weaknesses & Missing Concepts</p>
+                      <div className="mt-2 space-y-2">
+                        {(feedback?.weaknesses || []).length || (feedback?.missing_concepts || []).length ? (
+                          [...(feedback?.weaknesses || []), ...(feedback?.missing_concepts || [])].map((item) => (
+                            <div key={item} className="rounded-xl bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+                              {item}
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No gaps recorded.</p>
+                        )}
                       </div>
                     </div>
                   </div>
-                ))
+                </div>
+              ))
+            ) : (
+              <EmptyState title="No question review available" description="Complete the interview to populate the question-by-question assessment." />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Resume Used</CardTitle>
+              <CardDescription>Visible only when the session used resume context.</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {resume ? (
+              <>
+                <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Resume name</p>
+                  <p className="mt-1 font-medium">{resume.alias || resume.file_path?.split("/").pop() || "Resume"}</p>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Resume ID</p>
+                  <p className="mt-1 break-all font-medium text-sm">{resume.id || "—"}</p>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Source file</p>
+                  <p className="mt-1 break-all font-medium text-sm">{resume.file_path?.split("/").pop() || "—"}</p>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">This interview did not use a resume-based source.</p>
+            )}
+
+            <div className="pt-2">
+              {report ? (
+                <Button type="button" variant="outline" className="w-full" onClick={handleGenerateReport} isLoading={reportLoading} disabled={reportLoading}>
+                  Regenerate Report
+                </Button>
               ) : (
-                <EmptyState title="No question review available" description="Complete the interview to populate question-level analysis." />
+                <Button type="button" className="w-full" onClick={handleGenerateReport} isLoading={reportLoading} disabled={reportLoading}>
+                  Generate Report
+                </Button>
               )}
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
